@@ -42,7 +42,7 @@ SUGAR_POOL = [
     "5k","6k","7k","8k","9k","9.5k","10k"
 ]
 SWEET_POOL = ["Free","5%","10%","20%","25%","50%"]
-VANILLA_POOL = [str(x) for x in range(100, 50001, 100)]
+VANILLA_POOL = [str(x) for x in range(100, 50001, 100)]  # 100 to 50k in 100 increments
 
 # ---------------------
 # Helpers
@@ -80,17 +80,16 @@ def generate_rewards(command):
 # ---------------------
 # Draw centered text in boxes
 # ---------------------
-def draw_text_in_box(draw, box_x, box_y, text, font, fill="black", x_offset=0, y_offset=0):
-    # Calculate bounding box of text
+def draw_text_centered(draw, box_x, box_y, box_width, box_height, text, font_size=150, fill="black", x_offset=0, y_offset=0):
+    try:
+        font = ImageFont.truetype("arial.ttf", font_size)
+    except:
+        font = ImageFont.load_default()
     bbox = draw.textbbox((0,0), text, font=font)
     text_width = bbox[2] - bbox[0]
     text_height = bbox[3] - bbox[1]
-
-    # Box center
-    center_x = box_x + BOX_WIDTH / 2
-    center_y = box_y + BOX_HEIGHT / 2
-
-    # Draw text centered
+    center_x = box_x + box_width / 2
+    center_y = box_y + box_height / 2
     draw.text(
         (center_x - text_width/2 + x_offset, center_y - text_height/2 + y_offset),
         text,
@@ -105,22 +104,13 @@ def generate_card(rewards, scratched):
     img = Image.open("scratch_template.png").convert("RGBA")
     draw = ImageDraw.Draw(img)
 
-    try:
-        font = ImageFont.truetype("arial.ttf", 120)  # large readable font
-    except:
-        font = ImageFont.load_default()
-
-    # Optional horizontal offsets per box to tweak manually
-    x_offsets = [0, 5, 8, 10, 0, 0, 0, 0]
-
     for i, scratched_box in enumerate(scratched):
         if scratched_box:
             reward = rewards[i]
-            draw_text_in_box(draw, RECT_COORDS[i][0], RECT_COORDS[i][1],
-                             reward, font,
-                             fill="black",
-                             x_offset=x_offsets[i])
-
+            draw_text_centered(draw, RECT_COORDS[i][0], RECT_COORDS[i][1],
+                               BOX_WIDTH, BOX_HEIGHT,
+                               reward,
+                               font_size=150)
     img.save("card.png")
     return "card.png"
 
@@ -128,11 +118,15 @@ def generate_card(rewards, scratched):
 # Buttons
 # ---------------------
 class ScratchButton(discord.ui.Button):
-    def __init__(self,index):
-        super().__init__(label=f"Scratch {index+1}", style=discord.ButtonStyle.secondary)
+    def __init__(self, index):
+        super().__init__(
+            label=f"Scratch {index+1}",
+            style=discord.ButtonStyle.primary,
+            emoji=discord.PartialEmoji(name="CC_bow", id=1479503070252765419)
+        )
         self.index = index
 
-    async def callback(self,interaction:discord.Interaction):
+    async def callback(self, interaction: discord.Interaction):
         card = cards.get(interaction.message.id)
         if interaction.user.id != card["user"]:
             return await interaction.response.send_message("This isn't your card.", ephemeral=True)
@@ -144,11 +138,9 @@ class ScratchButton(discord.ui.Button):
         img_path = generate_card(card["rewards"], card["scratched"])
         file = discord.File(img_path)
 
-        # Disable only this button
-        self.disabled = True
+        self.disabled = True  # disable only this button
         await interaction.response.edit_message(attachments=[file], view=self.view)
 
-        # Audit log (username only)
         log = get_log_channel(interaction.guild)
         if log:
             await log.send(
@@ -175,13 +167,11 @@ async def create_card(interaction, user, command):
     img_path = generate_card(rewards, scratched)
     file = discord.File(img_path)
     view = ScratchView()
-
     await interaction.response.send_message(
         f"{user.name} received a scratch card!",
         file=file,
         view=view
     )
-
     msg = await interaction.original_response()
     cards[msg.id] = {
         "user": user.id,
